@@ -1,0 +1,133 @@
+<head>
+  <meta
+    name="viewport"
+    content="width=device-width, minimum-scale=1.0, initial-scale=1, user-scalable=no"
+  />
+  <meta charset="utf-8" />
+
+  <!-- The Viewer CSS -->
+  <link
+    rel="stylesheet"
+    href="https://developer.api.autodesk.com/modelderivative/v2/viewers/2.*/style.min.css"
+    type="text/css"
+  />
+
+  <!-- Developer CSS -->
+  <style>
+    body {
+      margin: 0;
+    }
+    #MyViewerDiv {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background-color: #f0f8ff;
+    }
+  </style>
+</head>
+<body>
+  <form id="form">
+    <input id="input" type="file" name="dwgFile" />
+    <button type="submit">Upload</button>
+  </form>
+  <!-- The Viewer will be instantiated here -->
+  <div id="MyViewerDiv"></div>
+
+  <!-- The Viewer JS -->
+  <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/2.*/three.min.js"></script>
+  <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/2.*/viewer3D.min.js"></script>
+
+  <!-- Developer JS -->
+  <script>
+    const form = document.querySelector("#form");
+    const input = document.querySelector("#input");
+    let viewer;
+    let file;
+    const onFileChange = (e) => {
+      console.log("file changed");
+      file = e.target.files[0];
+    };
+    function onDocumentLoadSuccess(doc) {
+      // A document contains references to 3D and 2D viewables.
+      console.log("onDocumentLoadSuccess");
+      var viewables =
+        window.Autodesk.Viewing.Document.getSubItemsWithProperties(
+          doc.getRootItem(),
+          { type: "geometry" },
+          true
+        );
+      if (viewables.length === 0) {
+        console.error("Document contains no viewables.");
+        return;
+      }
+
+      // Choose any of the avialble viewables
+      var initialViewable = viewables[0];
+      var svfUrl = doc.getViewablePath(initialViewable);
+      var modelOptions = {
+        sharedPropertyDbPath: doc.getPropertyDbPath(),
+      };
+      console.log("1");
+
+      var viewerDiv = document.getElementById("MyViewerDiv");
+      viewer = new window.Autodesk.Viewing.Private.GuiViewer3D(viewerDiv);
+      console.log("Viewer created: ", viewer);
+      viewer.start(svfUrl, modelOptions, onLoadModelSuccess, onLoadModelError);
+    }
+    function onDocumentLoadFailure(viewerErrorCode) {
+      console.error("onDocumentLoadFailure() - errorCode:" + viewerErrorCode);
+    }
+    function onLoadModelSuccess(model) {
+      console.log("onLoadModelSuccess()!");
+      console.log("Validate model loaded: " + (viewer.model === model));
+      console.log(model);
+    }
+    function onLoadModelError(viewerErrorCode) {
+      console.error("onLoadModelError() - errorCode:" + viewerErrorCode);
+    }
+    const onSubmit = async (e) => {
+      console.log("Event cancelable:", e.cancelable);
+      console.log("onsubmit");
+      e.preventDefault();
+      const formData = new FormData();
+      formData.append("dwg", file);
+
+      try {
+        const response = await fetch("http://localhost:8080/upload", {
+          method: "POST",
+          body: formData,
+          keepalive: true,
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const res = await response.json();
+        console.log(res);
+        const { urn, token } = res.data;
+        console.log(token.access_token);
+        var options = {
+          env: "AutodeskProduction",
+          webGLHelpLink: "http://my.webgl.help.link",
+          accessToken: token.access_token,
+        };
+        window.Autodesk.Viewing.Initializer(
+          options,
+          function onInitialized() {
+            window.Autodesk.Viewing.Document.load(
+              "urn:" + urn,
+              onDocumentLoadSuccess,
+              onDocumentLoadFailure
+            );
+          },
+          function onError(error) {
+            console.error("Error during Viewer initialization:", error);
+          }
+        );
+      } catch (error) {
+        console.error("Error:", error);
+      }
+    };
+    form.addEventListener("submit", onSubmit);
+    input.addEventListener("change", onFileChange);
+  </script>
+</body>
